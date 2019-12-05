@@ -6,16 +6,23 @@ type ParameterMode =
 
 let getParameterMode x = if x = '0' then Position else Immediate
 
-let parseInstruction instruction =
+let (|Instruction|) (memory:_[], instructionPointer) =
+  let instruction = memory.[instructionPointer]
   let fullInstruction = sprintf "%05d" instruction // assuming maximum of 3 arguments
   let opcode = fullInstruction.[3..4] |> int
   let parameters = fullInstruction.[0..2] |> Seq.map getParameterMode |> Array.ofSeq |> Array.rev
-  opcode, parameters
+  opcode, (memory, instructionPointer, parameters)
 
 let getParamValue (memory: int[]) paramMode idx =
   match paramMode with
   | Position -> memory.[memory.[idx]]
   | Immediate -> memory.[idx]
+
+let (|Param|) idx (memory, instructionPointer, parameters:_[]) =
+  getParamValue memory parameters.[idx] (instructionPointer + 1 + idx)
+
+let (|ParamMode|) idx (_, _, parameters:_[]) = 
+  parameters.[idx]
 
 let saveResult (memory: int[]) paramMode idx value =
   match paramMode with
@@ -24,72 +31,54 @@ let saveResult (memory: int[]) paramMode idx value =
   memory
 
 let rec runIntcode (input: int) instructionPointer (memory: int[])  =
-  let opcode, paramModes = parseInstruction memory.[instructionPointer]
-  match opcode with
-
-  | 1 -> 
-    let param1 = getParamValue memory paramModes.[0] (instructionPointer + 1)
-    let param2 = getParamValue memory paramModes.[1] (instructionPointer + 2)
+  match memory, instructionPointer with 
+  | Instruction(1, Param 0 param1 & Param 1 param2 & ParamMode 2 outMode) -> 
     param1 + param2 
-    |> saveResult memory paramModes.[2] (instructionPointer+3) 
+    |> saveResult memory outMode (instructionPointer+3) 
     |> runIntcode input (instructionPointer + 4)
 
-  | 2 ->
-    let param1 = getParamValue memory paramModes.[0] (instructionPointer + 1)
-    let param2 = getParamValue memory paramModes.[1] (instructionPointer + 2)
+  | Instruction(2, Param 0 param1 & Param 1 param2 & ParamMode 2 outMode) -> 
     param1 * param2 
-    |> saveResult memory paramModes.[2] (instructionPointer+3) 
+    |> saveResult memory outMode (instructionPointer+3) 
     |> runIntcode input (instructionPointer + 4)
 
-  | 3 -> 
+  | Instruction(3, ParamMode 0 outMode) -> 
     // write input
     input
-    |> saveResult memory paramModes.[0] (instructionPointer + 1) 
+    |> saveResult memory outMode (instructionPointer + 1) 
     |> runIntcode input (instructionPointer + 2)
 
-  | 4 -> 
-    // print value
-    let value = getParamValue memory paramModes.[0] (instructionPointer + 1)
+  | Instruction(4, Param 0 value) -> 
     printfn "%d" value
     runIntcode input (instructionPointer + 2) memory
 
-  | 5 ->
+  | Instruction(5, Param 0 0) -> 
     // jump if true
-    let param1 = getParamValue memory paramModes.[0] (instructionPointer + 1)
-    if param1 <> 0 then
-      let instructionPointer' = getParamValue memory paramModes.[1] (instructionPointer + 2)
-      runIntcode input instructionPointer' memory
-    else
-      runIntcode input (instructionPointer + 3) memory
+    runIntcode input (instructionPointer + 3) memory
+  | Instruction(5, Param 0 _ & ParamMode 1 outMode) -> 
+    let instructionPointer' = getParamValue memory outMode (instructionPointer + 2)
+    runIntcode input instructionPointer' memory
   
-  | 6 ->
+  | Instruction(6, Param 0 0 & ParamMode 1 outMode) -> 
     // jump if false
-    let param1 = getParamValue memory paramModes.[0] (instructionPointer + 1)
-    if param1 = 0 then
-      let instructionPointer' = getParamValue memory paramModes.[1] (instructionPointer + 2)
-      runIntcode input instructionPointer' memory
-    else
-      runIntcode input (instructionPointer + 3) memory
+    let instructionPointer' = getParamValue memory outMode (instructionPointer + 2)
+    runIntcode input instructionPointer' memory
+  | Instruction(6, Param 0 _) -> 
+    runIntcode input (instructionPointer + 3) memory
 
-  | 7 ->
+  | Instruction(7, Param 0 param1 & Param 1 param2 & ParamMode 2 outMode) -> 
     // less than
-    let param1 = getParamValue memory paramModes.[0] (instructionPointer + 1)
-    let param2 = getParamValue memory paramModes.[1] (instructionPointer + 2)
-    
     if param1 < param2 then 1 else 0
-    |> saveResult memory paramModes.[2] (instructionPointer + 3) 
+    |> saveResult memory outMode (instructionPointer + 3) 
     |> runIntcode input (instructionPointer + 4)
 
-  | 8 ->
+  | Instruction(8, Param 0 param1 & Param 1 param2 & ParamMode 2 outMode) -> 
     // equals
-    let param1 = getParamValue memory paramModes.[0] (instructionPointer + 1)
-    let param2 = getParamValue memory paramModes.[1] (instructionPointer + 2)
-    
     if param1 = param2 then 1 else 0
-    |> saveResult memory paramModes.[2] (instructionPointer + 3) 
+    |> saveResult memory outMode (instructionPointer + 3) 
     |> runIntcode input (instructionPointer + 4)    
 
-  | 99 -> printfn "Halt"; 0
+  | Instruction(99, _) -> printfn "Halt"; 0
   | _ -> 
       printfn "Something went wrong"
       0
