@@ -40,7 +40,6 @@ let checkPassword2 (password: string) =
   else
     false
 
-
 [ lowest .. highest ]
 |> List.filter (fun password ->
     checkPassword2 (string password)
