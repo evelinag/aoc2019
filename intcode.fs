@@ -81,7 +81,6 @@ let rec runIntcode (inputs: int64 list) (outputs: int64 list) (computer : IntCod
   | 3 -> 
     // write input
     if inputs.Length = 0 then
-      printfn "Waiting for input..."
       // return memory state and "wait" for next input
       outputs, Some { computer with OnHold = true }
     else
